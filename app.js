@@ -47,7 +47,7 @@ function load(){
   return st;
 }
 let S = load();
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} };
+const save = () => { S._ts = Date.now(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} markDirty(); };
 
 // rutina que toca ese día (objeto) o null si es descanso
 const routineById = id => S.routines.find(r => r.id === id) || null;
@@ -184,8 +184,8 @@ function renderHome(app){
   const total = dayStats(firstDay(), t);
   app.append(el(`<div class="cal" style="margin-top:14px">${statsBlock(total, 'Desde que empezaste · ' + longDate(fmt(firstDay())))}</div>`));
 
-  const bk = el(`<button class="hist-btn" style="margin-top:10px"><span>💾 Respaldo de datos</span><small>exportar / importar</small></button>`);
-  bk.onclick = openBackup;
+  const bk = el(`<button class="hist-btn" style="margin-top:10px"><span>☁️ Cuenta y respaldo</span><small class="sync-small"></small></button>`);
+  bk.onclick = openBackup; setTimeout(paintSync, 0);
   const n = attendedDays().length;
   const hb = el(`<button class="hist-btn"><span>📖 Historial de entrenamientos</span><small>${n} día${n===1?'':'s'}</small></button>`);
   hb.onclick = openLog;
@@ -492,6 +492,9 @@ const mediaTx = (mode, fn) => idb.then(db => new Promise((res, rej) => {
 const mediaPut = (k, b) => mediaTx('readwrite', st => st.put(b, k));
 const mediaGet = k => mediaTx('readonly', st => st.get(k)).catch(() => null);
 const mediaDel = k => mediaTx('readwrite', st => st.delete(k)).catch(() => null);
+// versiones: cada foto/video lleva una versión dentro del estado para saber qué subir o bajar de la nube
+const putMedia = async (k, b) => { await mediaPut(k, b); S.mediaVer = S.mediaVer || {}; S.mediaVer[k] = Date.now(); meta.have[k] = S.mediaVer[k]; };
+const delMedia = async k => { await mediaDel(k); S.mediaVer = S.mediaVer || {}; S.mediaVer[k] = -Date.now(); meta.have[k] = S.mediaVer[k]; };
 
 const monthLabel = id => { const [y,m] = id.split('-').map(Number); return `${MONTHS[m-1].slice(0,3)} ${y}`; };
 const monthLong = id => { const [y,m] = id.split('-').map(Number); return `${MONTHS[m-1]} ${y}`; };
@@ -708,7 +711,7 @@ function editRecord(r){
   p.querySelector('#c').onclick = closeSheet;
   p.querySelector('#del')?.addEventListener('click', async () => {
     if (!confirm('¿Borrar este registro con sus fotos y video?')) return;
-    for (const k of [...PHOTOS.map(x => x[0]), 'video']) await mediaDel(`${r.id}:${k}`);
+    for (const k of [...PHOTOS.map(x => x[0]), 'video']) await delMedia(`${r.id}:${k}`);
     S.records = S.records.filter(x => x.id !== r.id); save(); closeSheet(); render();
   });
   p.querySelector('#ok').onclick = async () => {
@@ -716,7 +719,7 @@ function editRecord(r){
     const btn = p.querySelector('#ok'); btn.textContent = 'Guardando…'; btn.disabled = true;
     try {
       for (const k in pending) {
-        if (pending[k]) await mediaPut(`${id}:${k}`, pending[k]); else await mediaDel(`${id}:${k}`);
+        if (pending[k]) await putMedia(`${id}:${k}`, pending[k]); else await delMedia(`${id}:${k}`);
       }
     } catch(e){
       alert('No se pudo guardar una foto o el video (¿poco espacio?).');
@@ -996,19 +999,25 @@ async function importBackup(file){
     if (d.app !== 'gymtrack' || !d.state) throw new Error('formato');
     if (!confirm(`Esto REEMPLAZA todos los datos actuales de esta app por los del respaldo (${d.exported?.slice(0,10) || 'sin fecha'}). ¿Continuar?`)) return;
     for (const k of await mediaKeys()) await mediaDel(k);
-    for (const k in (d.media || {})) await mediaPut(k, await (await fetch(d.media[k])).blob());
+    d.state.mediaVer = {};
+    for (const k in (d.media || {})){ await mediaPut(k, await (await fetch(d.media[k])).blob()); d.state.mediaVer[k] = Date.now(); }
+    d.state._ts = Date.now();
     localStorage.setItem(KEY, JSON.stringify(d.state));
+    meta.dirty = true; meta.have = {}; meta.up = {}; saveMeta();
     alert('Respaldo importado ✓'); reloadApp();
   } catch(e){ alert('Ese archivo no es un respaldo válido de Gym Track.'); }
 }
 
 function openBackup(){
-  const p = openSheet(`<h2>Respaldo de datos</h2>
-    <p class="hint" style="text-align:left;line-height:1.5">Guarda en un archivo todas tus rutinas, ejercicios, historial, medidas, fotos y video. Sirve para pasar tus datos a otro teléfono o a la app instalada, y como seguro por si se borra el navegador.</p>
-    <button class="btn pri" id="ex" style="width:100%;margin-top:10px">Exportar respaldo</button>
+  const p = openSheet(`<h2>Cuenta y respaldo</h2>
+    <div id="acct"></div>
+    <label style="margin-top:18px">Respaldo manual</label>
+    <p class="hint" style="text-align:left;line-height:1.5">Guarda en un archivo todas tus rutinas, ejercicios, historial, medidas, fotos y video.</p>
+    <button class="btn" id="ex" style="width:100%;margin-top:6px">Exportar respaldo</button>
     <button class="btn" id="im" style="width:100%;margin-top:10px">Importar respaldo</button>
     <input type="file" id="imf" accept=".json,application/json" hidden>
     <div class="row"><button class="btn" id="c">Cerrar</button></div>`);
+  drawAccount(p.querySelector('#acct'));
   p.querySelector('#ex').onclick = e => exportBackup(e.currentTarget);
   const f = p.querySelector('#imf');
   p.querySelector('#im').onclick = () => f.click();
@@ -1020,5 +1029,173 @@ function openBackup(){
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')){
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+
+// ---------- SINCRONIZACIÓN entre dispositivos (Supabase, por REST) ----------
+const SYNC = { url: 'https://wcocekujwvcotthaxnxn.supabase.co', key: 'sb_publishable_Xkib7jLw7J9EVoyHfAXFeA_PwF54Gq0' };   // URL del proyecto y clave "anon" (pública; los datos los protege la seguridad por usuario)
+const META_KEY = 'gymtrack.sync', AUTH_KEY = 'gymtrack.auth';
+const lsGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch(e){ return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
+// meta = estado de sincronización de ESTE dispositivo: baseTs = versión de la nube que ya tenemos, dirty = hay cambios sin subir
+var meta = lsGet(META_KEY, null) || { baseTs: 0, dirty: false, up: {}, have: {}, fail: {}, last: 0 };
+meta.up = meta.up || {}; meta.have = meta.have || {}; meta.fail = meta.fail || {};
+var auth = lsGet(AUTH_KEY, null);
+const saveMeta = () => lsSet(META_KEY, meta);
+const syncOn = () => !!(SYNC.url && SYNC.key);
+let syncing = false, syncStatus = 'idle', syncDetail = '', syncTimer = null;
+
+function markDirty(){ meta.dirty = true; saveMeta(); scheduleSync(); }
+function scheduleSync(){ if (!syncOn() || !auth) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), 2000); }
+
+const statusText = () => !syncOn() ? '' : !auth ? 'sin iniciar sesión' :
+  ({ syncing: 'sincronizando…', ok: meta.dirty ? 'cambios pendientes' : '✓ sincronizado', offline: 'sin conexión', error: 'error al sincronizar', idle: meta.dirty ? 'cambios pendientes' : (meta.last ? '✓ sincronizado' : '') })[syncStatus];
+function paintSync(){
+  document.querySelectorAll('.sync-small').forEach(n => n.textContent = statusText());
+  document.querySelectorAll('.sync-status').forEach(n => n.textContent = statusText() + (syncDetail ? ' · ' + syncDetail : '') + (meta.last ? ` · última: ${new Date(meta.last).toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'})}` : ''));
+}
+function setStatus(st, detail){ syncStatus = st; syncDetail = detail || ''; paintSync(); }
+
+async function authReq(path, body){
+  const r = await fetch(`${SYNC.url}/auth/v1/${path}`, { method: 'POST', headers: { apikey: SYNC.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(({ invalid_credentials: 'Correo o contraseña incorrectos', user_already_exists: 'Ese correo ya tiene cuenta: inicia sesión', weak_password: 'La contraseña es muy corta (mínimo 6)' })[j.error_code] || j.msg || j.error_description || j.message || 'Error de conexión');
+  return j;
+}
+function setSession(j){
+  auth = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000, uid: j.user.id, email: j.user.email };
+  lsSet(AUTH_KEY, auth);
+  if (meta.uid && meta.uid !== auth.uid) meta = { baseTs: 0, dirty: true, up: {}, have: {}, fail: {}, last: 0 };  // otra cuenta: no mezclar
+  meta.uid = auth.uid; saveMeta();
+}
+async function signUp(email, pw){
+  const j = await authReq('signup', { email, password: pw });
+  if (!j.access_token) throw new Error('En Supabase desactiva "Confirm email" (Authentication → Sign In / Providers → Email) y vuelve a intentar.');
+  setSession(j);
+}
+const signIn = async (email, pw) => setSession(await authReq('token?grant_type=password', { email, password: pw }));
+function signOut(){
+  auth = null; try { localStorage.removeItem(AUTH_KEY); } catch(e){}
+  setStatus('idle');
+}
+async function token(){
+  if (!auth) throw new Error('sin sesión');
+  if (Date.now() > auth.expires_at - 60000){
+    try { setSession(await authReq('token?grant_type=refresh_token', { refresh_token: auth.refresh_token })); }
+    catch(e){ if (navigator.onLine && /refresh|invalid|expired|not found/i.test(e.message)){ auth = null; try { localStorage.removeItem(AUTH_KEY); } catch(_){} } throw e; }
+  }
+  return auth.access_token;
+}
+async function api(path, opts = {}){
+  const t = await token();
+  return fetch(`${SYNC.url}${path}`, { ...opts, headers: { apikey: SYNC.key, Authorization: 'Bearer ' + t, ...(opts.headers || {}) } });
+}
+const mediaPath = key => `/storage/v1/object/media/${auth.uid}/${key.replace(':', '_')}`;
+
+async function pushMedia(vers){
+  let skipped = 0;
+  for (const key in vers){
+    const v = vers[key];
+    if (meta.up[key] === v || meta.fail[key] === v) continue;
+    try {
+      if (v > 0){
+        const b = await mediaGet(key);
+        if (b){
+          const r = await api(mediaPath(key), { method: 'POST', headers: { 'Content-Type': b.type || 'application/octet-stream', 'x-upsert': 'true' }, body: b });
+          if (!r.ok) throw new Error(r.status === 413 ? 'archivo demasiado grande' : 'HTTP ' + r.status);
+        }
+      } else {
+        await api(mediaPath(key), { method: 'DELETE' });
+      }
+      meta.up[key] = v; delete meta.fail[key];
+    } catch(e){ meta.fail[key] = v; skipped++; }
+    saveMeta();
+  }
+  return skipped;
+}
+
+async function push(){
+  const snap = { ...S, active: null };            // la rutina en curso no se comparte
+  const sent = S._ts || (S._ts = Date.now());
+  snap._ts = sent;
+  const skipped = await pushMedia({ ...(S.mediaVer || {}) });
+  const r = await api('/rest/v1/gym_data', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify({ user_id: auth.uid, state: snap, ts: sent }) });
+  if (!r.ok) throw new Error('HTTP ' + r.status + ' (¿ya ejecutaste el SQL de configuración?)');
+  meta.baseTs = sent;
+  if (S._ts === sent) meta.dirty = false;
+  saveMeta();
+  if (skipped) syncDetail = `${skipped} archivo(s) no se pudieron subir`;
+}
+
+async function applyRemote(remote){
+  const st = remote.state;
+  for (const key in (st.mediaVer || {})){
+    const v = st.mediaVer[key];
+    if (meta.have[key] === v) continue;
+    if (v > 0){
+      const r = await api(mediaPath(key).replace('/object/', '/object/authenticated/'));
+      if (!r.ok) continue;
+      await mediaPut(key, await r.blob());
+    } else await mediaDel(key);
+    meta.have[key] = v; meta.up[key] = v;
+  }
+  const active = S.active;
+  st.active = active || null;
+  localStorage.setItem(KEY, JSON.stringify(st));
+  S = load();
+  meta.baseTs = remote.ts; meta.dirty = false; saveMeta();
+  if (!document.querySelector('.workout, .sheet:not(.hidden), .viewer')) render();
+}
+
+async function syncNow(){
+  if (!syncOn() || !auth || syncing) return;
+  syncing = true; setStatus('syncing');
+  try {
+    const r = await api(`/rest/v1/gym_data?select=state,ts&user_id=eq.${auth.uid}`);
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' (¿ya ejecutaste el SQL de configuración?)');
+    const remote = (await r.json())[0];
+    if (!remote) await push();
+    else if (remote.ts === meta.baseTs){ if (meta.dirty) await push(); }
+    else if (!meta.dirty) await applyRemote(remote);
+    else if (confirm('Hay cambios en la nube y también en este dispositivo.\n\nAceptar = usar los datos de la nube (se pierden los cambios de aquí)\nCancelar = usar los de este dispositivo (reemplaza la nube)')) await applyRemote(remote);
+    else await push();
+    meta.last = Date.now(); saveMeta(); setStatus('ok', syncDetail);
+  } catch(e){
+    setStatus(navigator.onLine ? 'error' : 'offline', navigator.onLine ? e.message : '');
+  } finally { syncing = false; paintSync(); }
+}
+
+function drawAccount(box){
+  box.innerHTML = '';
+  if (!syncOn()){ box.append(el(`<p class="hint" style="text-align:left">La sincronización todavía no está configurada en esta app.</p>`)); return; }
+  if (auth){
+    const v = el(`<div><label>Sincronización activa</label><div class="acct-mail">${esc(auth.email)}</div>
+      <div class="hint sync-status" style="text-align:left;margin:6px 0 10px"></div>
+      <div class="row" style="margin-top:0"><button class="btn pri" id="sn">Sincronizar ahora</button><button class="btn del" id="so">Cerrar sesión</button></div></div>`);
+    v.querySelector('#sn').onclick = () => syncNow();
+    v.querySelector('#so').onclick = () => { if (confirm('¿Cerrar sesión? Tus datos se quedan en este dispositivo.')){ signOut(); drawAccount(box); } };
+    box.append(v); paintSync(); return;
+  }
+  const f = el(`<div><label>Entra para sincronizar tus datos entre dispositivos</label>
+    <input id="em" type="email" inputmode="email" autocapitalize="none" autocomplete="email" placeholder="correo@ejemplo.com">
+    <input id="pw" type="password" autocomplete="current-password" placeholder="Contraseña (mínimo 6)" style="margin-top:8px">
+    <div class="hint" id="err" style="text-align:left;color:var(--red);min-height:16px;margin-top:6px"></div>
+    <div class="row" style="margin-top:6px"><button class="btn pri" id="in">Iniciar sesión</button><button class="btn" id="up">Crear cuenta</button></div></div>`);
+  const go = fn => async e => {
+    const email = f.querySelector('#em').value.trim(), pw = f.querySelector('#pw').value, err = f.querySelector('#err'), btn = e.currentTarget;
+    if (!email || pw.length < 6){ err.textContent = 'Escribe tu correo y una contraseña de al menos 6 caracteres.'; return; }
+    btn.disabled = true; err.textContent = '';
+    try { await fn(email, pw); drawAccount(box); syncNow(); }
+    catch(x){ err.textContent = x.message; btn.disabled = false; }
+  };
+  f.querySelector('#in').onclick = go(signIn);
+  f.querySelector('#up').onclick = go(signUp);
+  box.append(f);
+}
+
+// sincroniza al abrir, al volver a la app y al recuperar internet
+window.addEventListener('online', () => syncNow());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(); });
+setTimeout(() => { paintSync(); syncNow(); }, 300);
 
 render();

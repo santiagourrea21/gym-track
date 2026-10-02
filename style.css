@@ -230,3 +230,5 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .month-block .stats{display:none}
 .panel>.stats{margin:0 0 16px;background:var(--card2);border-radius:14px;padding:12px}
 .panel>.stats .stat-box{background:var(--card)}
+
+.acct-mail{background:var(--card2);border-radius:12px;padding:12px;font-weight:600;word-break:break-all}
