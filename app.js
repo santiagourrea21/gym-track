@@ -1151,6 +1151,10 @@ async function syncNow(){
   if (!syncOn() || !auth || syncing) return;
   syncing = true; setStatus('syncing');
   try {
+    if (!meta.dirty){   // revisión barata: si la nube no cambió, no se descarga nada
+      const q = await api(`/rest/v1/gym_data?select=ts&user_id=eq.${auth.uid}`);
+      if (q.ok){ const row = (await q.json())[0]; if (row && row.ts === meta.baseTs){ meta.last = Date.now(); saveMeta(); setStatus('ok', syncDetail); return; } }
+    }
     const r = await api(`/rest/v1/gym_data?select=state,ts&user_id=eq.${auth.uid}`);
     if (!r.ok) throw new Error('HTTP ' + r.status + ' (¿ya ejecutaste el SQL de configuración?)');
     const remote = (await r.json())[0];
@@ -1196,6 +1200,8 @@ function drawAccount(box){
 // sincroniza al abrir, al volver a la app y al recuperar internet
 window.addEventListener('online', () => syncNow());
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(); });
+window.addEventListener('focus', () => syncNow());                                  // al volver a la ventana (Mac/iPad con varias ventanas)
+setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 30000);  // y cada 30 s mientras la app está abierta
 setTimeout(() => { paintSync(); syncNow(); }, 300);
 
 render();
