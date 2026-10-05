@@ -1,6 +1,6 @@
 // Service worker: la app abre sin internet. Con conexión siempre intenta traer la versión nueva.
-const CACHE = 'gymtrack-v3';
-const FILES = ["./", "index.html", "style.css", "app.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "img/body-base.png", "img/body-lines.png", "img/z-abdomen.png", "img/z-antebrazo.png", "img/z-bicep.png", "img/z-cuadriceps.png", "img/z-cuello.png", "img/z-hombros.png", "img/z-pantorrilla.png", "img/z-pecho.png", "img/zones-map.png"];
+const CACHE = 'gymtrack-v4';
+const FILES = ["./", "index.html", "style.css", "app.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "img/body-base.png", "img/body-lines.png", "img/z-abdomen.png", "img/z-antebrazo.png", "img/z-bicep.png", "img/z-cuadriceps.png", "img/z-cuello.png", "img/z-gluteos.png", "img/z-hombros.png", "img/z-pantorrilla.png", "img/z-pecho.png", "img/zones-map.png"];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
 });

@@ -473,7 +473,7 @@ function editExercise(e){
 
 
 // ---------- REGISTRO (medidas + fotos + video) ----------
-const MEAS = [['cuello','Cuello'],['hombros','Hombros'],['pecho','Pecho'],['abdomen','Abdomen'],['bicep','Bicep'],['antebrazo','Antebrazo'],['cuadriceps','Cuadriceps'],['pantorrilla','Pantorrilla']];
+const MEAS = [['cuello','Cuello'],['hombros','Hombros'],['pecho','Pecho'],['abdomen','Abdomen'],['bicep','Bicep'],['antebrazo','Antebrazo'],['gluteos','Glúteos'],['cuadriceps','Cuadriceps'],['pantorrilla','Pantorrilla']];
 const PHOTOS = [['espalda','Espalda'],['pecho','Pecho'],['piernas','Piernas']];
 let recSel = null, measSel = null;
 
@@ -516,7 +516,7 @@ function resizeImage(file, max = 1200){
 
 // figura corporal en capas (img/): silueta, zona naranja por músculo, líneas.
 // zones-map.png guarda en el canal rojo el índice del músculo para saber qué se tocó.
-const ZONES = ['hombros','pecho','bicep','antebrazo','cuadriceps','pantorrilla','cuello','abdomen'];
+const ZONES = ['hombros','pecho','bicep','antebrazo','cuadriceps','pantorrilla','cuello','abdomen','gluteos'];
 const BODY_W = 448, BODY_H = 646;
 const zoneMap = new Promise(res => {
   const im = new Image();

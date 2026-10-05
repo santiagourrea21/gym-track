@@ -1,1 +1,1 @@
-hombros,pecho,bicep,antebrazo,cuadriceps,pantorrilla,cuello,abdomen
+hombros,pecho,bicep,antebrazo,cuadriceps,pantorrilla,cuello,abdomen,gluteos
