@@ -1,0 +1,7 @@
+server.py
+_test*.html
+_app_test.js
+_t.html
+*.log
+.git
+.vercel

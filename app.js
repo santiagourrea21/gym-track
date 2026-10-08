@@ -734,6 +734,103 @@ function editRecord(r){
 
 
 // ---------- ENTRENAMIENTO (iniciar rutina) ----------
+
+// orden de los ejercicios dentro de una sesión: lista explícita (order) + los que falten
+const orderedIds = o => {
+  const ids = Object.keys(o.sets), ord = (o.order || []).filter(id => ids.includes(id));
+  return [...ord, ...ids.filter(id => !ord.includes(id))];
+};
+const toolsHtml = `<div class="w-tools"><button class="tool swap" aria-label="Cambiar ejercicio" title="Cambiar ejercicio">⇄</button><button class="tool grip" aria-label="Mantén presionado y arrastra para mover" title="Mantén presionado y arrastra">⠿</button></div>`;
+
+// selector de ejercicios (capa propia, para poder abrirse encima de cualquier hoja)
+function pickExercise({ title = 'Elegir ejercicio', exclude = [], onPick }){
+  const o = el(`<div class="picker"><div class="picker-panel"><h2>${title}</h2><div class="picker-body"></div>
+    <div class="row"><button class="btn" data-c>Cancelar</button></div></div></div>`);
+  const body = o.querySelector('.picker-body');
+  if (!S.exercises.length) body.append(el(`<div class="hint" style="text-align:left">Aún no tienes ejercicios registrados. Agrégalos en la pestaña Ejercicios.</div>`));
+  GROUPS.forEach(g => {
+    const list = S.exercises.filter(e => e.group === g);
+    if (!list.length) return;
+    body.append(el(`<div class="stat" style="margin:12px 0 6px">${g}</div>`));
+    const ch = el(`<div class="chips"></div>`);
+    list.forEach(e => {
+      const taken = exclude.includes(e.id);
+      const c = el(`<button class="chip" ${taken ? 'disabled' : ''}>${esc(e.name)}${taken ? ' ✓' : ''}</button>`);
+      c.onclick = () => { o.remove(); onPick(e.id); };
+      ch.append(c);
+    });
+    body.append(ch);
+  });
+  const close = () => o.remove();
+  o.querySelector('[data-c]').onclick = close;
+  o.addEventListener('click', ev => { if (ev.target === o) close(); });
+  document.body.append(o);
+}
+
+// lista reordenable: mantén presionado el asa (⠿) y desliza arriba/abajo; las demás tarjetas se apartan con animación
+function makeSortable(list, { itemSel, handleSel, scroller, onDone }){
+  list.querySelectorAll(handleSel).forEach(h => {
+    const item = h.closest(itemSel);
+    let timer = null, sx = 0, sy = 0, pid = null;
+    const stop = () => clearTimeout(timer);
+    h.addEventListener('pointerdown', e => {
+      if (e.button) return;
+      sx = e.clientX; sy = e.clientY; pid = e.pointerId;
+      stop(); timer = setTimeout(begin, 280);
+    });
+    h.addEventListener('pointermove', e => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 12) stop(); });
+    h.addEventListener('pointerup', stop); h.addEventListener('pointercancel', stop);
+    h.addEventListener('contextmenu', e => e.preventDefault());
+
+    function begin(){
+      timer = null; navigator.vibrate?.(15);
+      try { h.setPointerCapture(pid); } catch(_) {}
+      const els = [...list.querySelectorAll(itemSel)], from = els.indexOf(item);
+      const base = scroller.scrollTop;
+      const rects = els.map(x => { const r = x.getBoundingClientRect(); return { top: r.top + scroller.scrollTop, h: r.height }; });
+      const gap = els.length > 1 ? Math.max(0, rects[1].top - (rects[0].top + rects[0].h)) : 0;
+      const step = rects[from].h + gap;
+      let curY = sy, to = from;
+      list.classList.add('sorting'); item.classList.add('dragging');
+
+      const update = () => {
+        const dy = (curY - sy) + (scroller.scrollTop - base);
+        item.style.transform = `translateY(${dy}px) scale(1.02)`;
+        const center = rects[from].top + dy + rects[from].h / 2;
+        to = 0; els.forEach((x, i) => { if (i !== from && rects[i].top + rects[i].h / 2 < center) to++; });
+        els.forEach((x, i) => {
+          if (i === from) return;
+          const sh = (from < to && i > from && i <= to) ? -step : (from > to && i >= to && i < from) ? step : 0;
+          x.style.transform = sh ? `translateY(${sh}px)` : '';
+        });
+      };
+      // auto-scroll cuando el dedo llega al borde de la pantalla
+      const auto = setInterval(() => {
+        const b = scroller.getBoundingClientRect(), edge = 80;
+        if (curY < b.top + edge) scroller.scrollTop -= Math.min(14, (b.top + edge - curY) / 4);
+        else if (curY > b.bottom - edge) scroller.scrollTop += Math.min(14, (curY - (b.bottom - edge)) / 4);
+        update();
+      }, 16);
+      const move = e => { curY = e.clientY; update(); };
+      const end = () => {
+        clearInterval(auto);
+        h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', end); h.removeEventListener('pointercancel', end);
+        // el elemento se acomoda en su nuevo hueco
+        const finalTop = to > from ? rects[to].top + rects[to].h - rects[from].h : to < from ? rects[to].top : rects[from].top;
+        item.classList.add('dropping');
+        item.style.transform = `translateY(${finalTop - rects[from].top}px)`;
+        setTimeout(() => {
+          els.forEach(x => { x.style.transform = ''; x.classList.remove('dragging', 'dropping'); });
+          list.classList.remove('sorting');
+          if (to !== from){ const ids = els.map(x => x.dataset.id); ids.splice(to, 0, ids.splice(from, 1)[0]); onDone(ids); }
+        }, 240);
+      };
+      h.addEventListener('pointermove', move); h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
+      update();
+    }
+  });
+}
+
 let workoutTimer = null;
 const shortDate = d => { const x = parse(d); return `${x.getDate()} ${MONTHS[x.getMonth()].slice(0,3)}`; };
 const fmtTime = sec => `${Math.floor(sec/60)}:${pad(sec%60)}`;
@@ -758,10 +855,11 @@ function startWorkout(routine){
       sets[id] = prev ? prev.map(x => ({ kg: x.kg, reps: x.reps, level: 0 }))
                       : [0,1,2].map(() => ({ kg: ex.kg || '', reps: ex.reps || '', level: 0 }));
     });
-    S.active = { date: k, routineId: routine.id, start: Date.now(), sets };
+    S.active = { date: k, routineId: routine.id, start: Date.now(), sets, order: Object.keys(sets) };
     save();
   }
   const A = S.active;
+  A.order = orderedIds(A);
   Object.values(A.sets).flat().forEach(x => { if (x.level === undefined) x.level = x.done ? 3 : 0; });
   const w = el(`<div class="workout">
     <div class="w-head"><div><div class="w-name">${esc(routine.name)}</div><div class="w-time" id="wt">0:00</div></div><button class="w-x">✕</button></div>
@@ -776,14 +874,16 @@ function startWorkout(routine){
 
   const draw = () => {
     const y = wb.scrollTop; wb.innerHTML = '';
-    const ids = Object.keys(A.sets);
+    const ids = orderedIds(A);
     wb.append(el(`<div class="w-legend">Toca el cuadro de cada serie: 1 vez 🔴 · 2 veces 🟡 · 3 veces 🟢 · otra vez para quitar</div>`));
     if (!ids.length) wb.append(el(`<div class="empty-msg">Esta rutina no tiene ejercicios.<br>Agrégalos en la pestaña Rutinas.</div>`));
+    const sl = el(`<div class="sort-list"></div>`);
+    wb.append(sl);
     ids.forEach(id => {
-      const ex = S.exercises.find(e => e.id === id);
+      const ex = S.exercises.find(e => e.id === id) || { name: 'Ejercicio eliminado', kg: '', reps: '' };
       const last = lastSession(id);
-      const card = el(`<div class="w-ex">
-        <div class="nm">${esc(ex.name)}</div>
+      const card = el(`<div class="w-ex" data-id="${id}">
+        <div class="w-ex-top"><div class="nm">${esc(ex.name)}</div>${toolsHtml}</div>
         <div class="w-info">
           <div><span>🏆 PR</span><b>${ex.kg ? `${ex.kg} kg × ${ex.reps || '—'}` : 'Sin PR'}</b></div>
           <div><span>Última vez${last ? ' · ' + shortDate(last.date) : ''}</span><b>${last ? last.sets.map(x => `${x.kg}×${x.reps}`).join('  ·  ') : 'Sin registro'}</b></div>
@@ -811,8 +911,22 @@ function startWorkout(routine){
         const l = A.sets[id][A.sets[id].length-1];
         A.sets[id].push({ kg: l ? l.kg : '', reps: l ? l.reps : '', level: 0 }); save(); draw();
       };
-      wb.append(card);
+      card.querySelector('.swap').onclick = () => {
+        const marked = A.sets[id].some(x => x.level);
+        pickExercise({ title: 'Cambiar por…', exclude: Object.keys(A.sets), onPick: nid => {
+          if (marked && !confirm('Este ejercicio ya tiene series marcadas. Si lo cambias se pierden. ¿Continuar?')) return;
+          const nx = S.exercises.find(e => e.id === nid), prev = lastSets(nid);
+          const ord = orderedIds(A);                         // el orden se toma ANTES de agregar el nuevo
+          A.sets[nid] = prev ? prev.map(x => ({ kg: x.kg, reps: x.reps, level: 0 }))
+                             : [0,1,2].map(() => ({ kg: nx.kg || '', reps: nx.reps || '', level: 0 }));
+          delete A.sets[id];
+          A.order = ord.map(x => x === id ? nid : x);
+          save(); draw();
+        }});
+      };
+      sl.append(card);
     });
+    makeSortable(sl, { itemSel: '.w-ex', handleSel: '.grip', scroller: wb, onDone: ids => { A.order = ids; save(); draw(); } });
     wb.scrollTop = y;
   };
   draw();
@@ -823,7 +937,7 @@ function startWorkout(routine){
     if (!doneCount && !confirm('No marcaste ninguna serie. ¿Terminar de todos modos?')) return;
     const log = {};
     const prs = [];
-    for (const id in A.sets){
+    for (const id of orderedIds(A)){
       log[id] = A.sets[id].filter(x => x.level && x.kg !== '' && x.reps !== '').map(x => ({ kg: +x.kg, reps: +x.reps, level: x.level }));
       const ex = S.exercises.find(e => e.id === id);
       log[id].forEach(x => {
@@ -833,7 +947,7 @@ function startWorkout(routine){
       if (!log[id].length) delete log[id];
     }
     S.sessions.push({ id: String(Date.now()), date: A.date, routineId: A.routineId, name: routine.name,
-      seconds: Math.floor((Date.now() - A.start)/1000), sets: log });
+      seconds: Math.floor((Date.now() - A.start)/1000), sets: log, order: orderedIds({ sets: log, order: A.order }) });
     S.marks[A.date] = 'went';
     S.active = null; save();
     clearInterval(workoutTimer); w.remove(); render();
@@ -880,7 +994,7 @@ function openLog(){
     const det = card.querySelector('.log-detail');
     if (!sess.length) det.append(el(`<div class="hint" style="text-align:left">Marcaste este día como asistido, pero no se registró la rutina.</div>`));
     sess.forEach(x => {
-      for (const id in x.sets){
+      for (const id of orderedIds(x)){
         const ex = S.exercises.find(e => e.id === id);
         const row = el(`<div class="log-ex"><div class="nm">${esc(ex?.name || 'Ejercicio eliminado')}</div><div class="log-sets">${
           x.sets[id].map(st => `<span class="set-chip l${st.level || 0}">${st.kg} kg × ${st.reps}</span>`).join('')}</div></div>`);
@@ -925,10 +1039,12 @@ function editLogDay(k, reload){
     draft.forEach(ses => {
       const sb = el(`<div class="ed-ses"><label>Rutina</label><input class="ed-name" value="${esc(ses.name)}"></div>`);
       sb.querySelector('.ed-name').oninput = e => { ses.name = e.target.value; };
-      Object.keys(ses.sets).forEach(id => {
+      const sl = el(`<div class="sort-list"></div>`);
+      sb.append(sl);
+      orderedIds(ses).forEach(id => {
         const ex = S.exercises.find(e => e.id === id);
         const arr = ses.sets[id];
-        const card = el(`<div class="w-ex"><div class="nm">${esc(ex?.name || 'Ejercicio eliminado')}</div>
+        const card = el(`<div class="w-ex" data-id="${id}"><div class="w-ex-top"><div class="nm">${esc(ex?.name || 'Ejercicio eliminado')}</div>${toolsHtml}</div>
           <div class="w-cols"><span>Serie</span><span>kg</span><span>Reps</span><span></span></div><div class="w-sets"></div>
           <div class="w-btns"><button class="w-del">− Serie</button><button class="w-add">+ Serie</button></div>
           <button class="w-add" style="margin-top:8px;color:var(--red)" data-rm>Quitar ejercicio</button></div>`);
@@ -947,8 +1063,14 @@ function editLogDay(k, reload){
         const del = card.querySelector('.w-del'); del.disabled = arr.length <= 1;
         del.onclick = () => { if (arr.length > 1){ arr.pop(); draw(); } };
         card.querySelector('[data-rm]').onclick = () => { if (confirm('¿Quitar este ejercicio del día?')){ delete ses.sets[id]; draw(); } };
-        sb.append(card);
+        card.querySelector('.swap').onclick = () => pickExercise({ title: 'Cambiar por…', exclude: Object.keys(ses.sets), onPick: nid => {
+          const ord = orderedIds(ses);                       // se conservan las series, solo cambia el ejercicio
+          ses.sets[nid] = ses.sets[id]; delete ses.sets[id];
+          ses.order = ord.map(x => x === id ? nid : x); draw();
+        }});
+        sl.append(card);
       });
+      makeSortable(sl, { itemSel: '.w-ex', handleSel: '.grip', scroller: p, onDone: ids => { ses.order = ids; draw(); } });
       box.append(sb);
     });
   };
@@ -961,7 +1083,7 @@ function editLogDay(k, reload){
         const arr = ses.sets[id].filter(x => x.kg !== '' && x.reps !== '').map(x => ({ kg: +x.kg, reps: +x.reps, level: x.level || 0 }));
         if (arr.length) sets[id] = arr;
       }
-      return { ...ses, name: ses.name.trim() || 'Rutina', date, sets };
+      return { ...ses, name: ses.name.trim() || 'Rutina', date, sets, order: orderedIds({ sets, order: ses.order }) };
     });
     S.sessions = S.sessions.filter(x => x.date !== k).concat(clean);
     if (date !== k && S.marks[k] === 'went'){ delete S.marks[k]; S.marks[date] = 'went'; }

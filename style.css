@@ -232,3 +232,21 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .panel>.stats .stat-box{background:var(--card)}
 
 .acct-mail{background:var(--card2);border-radius:12px;padding:12px;font-weight:600;word-break:break-all}
+
+/* cambiar / mover ejercicios */
+.w-ex{position:relative}
+.w-ex-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.w-ex-top .nm{margin:0;min-width:0}
+.w-tools{display:flex;gap:6px;flex:none}
+.tool{width:34px;height:34px;border-radius:10px;background:var(--card2);color:var(--mute);font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center}
+.ed-ses .tool{background:var(--card)}
+.tool.grip{touch-action:none;cursor:grab;font-size:20px}
+.tool:active{color:var(--text)}
+.sorting .w-ex{transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.sorting .w-ex.dragging{transition:none;z-index:6;box-shadow:0 14px 34px rgba(0,0,0,.55);outline:2px solid var(--accent)}
+.sorting .w-ex.dragging.dropping{transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s}
+.picker{position:fixed;top:0;left:0;right:0;height:100vh;height:100dvh;z-index:60;background:rgba(0,0,0,.6);display:flex;align-items:flex-end}
+.picker-panel{background:var(--card);width:100%;max-width:520px;margin:0 auto;border-radius:22px 22px 0 0;padding:18px 16px calc(24px + env(safe-area-inset-bottom));max-height:80vh;max-height:80dvh;display:flex;flex-direction:column}
+.picker-panel h2{margin:0 0 4px;font-size:18px}
+.picker-body{overflow:auto;flex:1;-webkit-overflow-scrolling:touch}
+.chip:disabled{opacity:.35}
