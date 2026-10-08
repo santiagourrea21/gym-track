@@ -159,7 +159,7 @@ function renderHome(app){
   // hoy
   const card = el(`<div class="today-card">
     <div class="day">${DAYS[t.getDay()]}, ${t.getDate()} de ${MONTHS[t.getMonth()]}</div>
-    <div class="plan-row"><div class="plan">${esc(planText(t))}</div>${planFor(t) ? `<button class="go">${S.active && S.active.date === k ? 'Continuar' : 'Iniciar'}</button>` : ''}</div>
+    <div class="plan-row"><div class="plan">${esc(planText(t))}</div>${planFor(t) ? (doneToday(t) ? `<button class="go done" disabled>✓ Hecha</button>` : `<button class="go">${S.active && S.active.date === k ? 'Continuar' : 'Iniciar'}</button>`) : ''}</div>
     ${todayExercises(t)}
     <button class="att ${done?'done':''}">${done?'✓ Asistido':'Asistido'}</button>
     <div class="hint">Toca = fui al gym · Mantén presionado = editar el día</div>
@@ -568,6 +568,7 @@ function renderRegistro(app){
         <div class="reg-title">${monthLong(r.id)}</div>
         <div class="body-wrap">${bodyLayers()}</div>
         <div class="readout" id="ro"></div>
+        <div class="peso-line" id="peso"></div>
         <button class="fotos-link">Fotos</button>
       </div>
       <div class="video-box" id="vbox">${r.has?.video ? '' : 'Sin video'}</div>
@@ -590,6 +591,11 @@ function renderRegistro(app){
       showMeas();
     };
     showMeas();
+    {
+      const pv = r.peso, pp = prev?.peso, has = pv !== '' && pv != null;
+      const d = (has && pp !== '' && pp != null) ? Math.round((pv - pp)*10)/10 : null;
+      card.querySelector('#peso').innerHTML = `<span>⚖️ Peso</span><b>${has ? pv + ' kg' : 'Sin registrar'}</b>` + (d ? `<small class="delta">${d > 0 ? '+' : ''}${d}</small>` : '');
+    }
     card.querySelector('.fotos-link').onclick = () => showPhotos(r);
     app.append(card);
     if (r.has?.video) mediaGet(`${r.id}:video`).then(b => {
@@ -672,6 +678,8 @@ function editRecord(r){
     ${isNew ? `<label>Mes</label><input id="mo" type="month" value="${nowMonth}">` : ''}
     <label>Medidas (cm)</label>
     <div class="meas-grid">${MEAS.map(([k,n]) => `<div><input id="m-${k}" type="number" inputmode="decimal" min="0" step="any" value="${r[k] ?? ''}" placeholder="0"><small>${n}</small></div>`).join('')}</div>
+    <label>Peso (kg)</label>
+    <input id="m-peso" type="number" inputmode="decimal" min="0" step="any" value="${r.peso ?? ''}" placeholder="0" style="text-align:center;font-size:20px;font-weight:700">
     <label>Fotos <span class="stat">· mantén presionada una para eliminarla</span></label>
     <div class="photo-grid">${PHOTOS.map(([k,n]) => `<div><div class="ph-img pick" data-k="${k}">Agregar</div><small>${n}</small><input type="file" accept="image/*" hidden data-f="${k}"></div>`).join('')}</div>
     <label>Video (cuerpo completo) <span class="stat">· mantén presionado para eliminarlo</span></label>
@@ -727,6 +735,7 @@ function editRecord(r){
     }
     const data = { id, has: { ...(S.records.find(x => x.id === id)?.has || {}), ...has } };
     MEAS.forEach(([k]) => data[k] = p.querySelector(`#m-${k}`).value);
+    data.peso = p.querySelector('#m-peso').value;
     S.records = S.records.filter(x => x.id !== id).concat(data);
     recSel = id; save(); closeSheet(); render();
   };
@@ -845,8 +854,11 @@ function lastSession(exId){
 const lastSets = exId => lastSession(exId)?.sets || null;
 const LEVEL_NAMES = ['', 'Rojo', 'Amarillo', 'Verde'];
 
+const doneToday = d => { const r = planFor(d); return !!r && S.sessions.some(x => x.date === fmt(d) && x.routineId === r.id); };
+
 function startWorkout(routine){
   const k = fmt(today());
+  if (S.sessions.some(x => x.date === k && x.routineId === routine.id)){ alert('Esta rutina ya la hiciste hoy.'); return; }
   if (!S.active || S.active.date !== k || S.active.routineId !== routine.id){
     const sets = {};
     routine.exerciseIds.forEach(id => {
@@ -1002,6 +1014,10 @@ function openLog(){
       }
       if (!Object.keys(x.sets).length) det.append(el(`<div class="hint" style="text-align:left">No se marcó ninguna serie.</div>`));
     });
+    const acts = el(`<div class="log-actions"><button class="btn" data-e>✏️ Editar día</button><button class="btn del" data-d>🗑 Eliminar</button></div>`);
+    acts.querySelector('[data-e]').onclick = () => editLogDay(k, reload);
+    acts.querySelector('[data-d]').onclick = () => deleteLogDay(k, reload);
+    det.append(acts);
     longPress(card.querySelector('.log-sum'), () => card.classList.toggle('open'), () => dayMenu(k, reload)); // mantener presionado = editar / eliminar
     body.append(card);
   });
@@ -1016,12 +1032,14 @@ function dayMenu(k, reload){
     <div class="row"><button class="btn" id="c">Cancelar</button></div>`);
   p.querySelector('#c').onclick = closeSheet;
   p.querySelector('#e').onclick = () => { closeSheet(); editLogDay(k, reload); };
-  p.querySelector('#d').onclick = () => {
-    if (!confirm(`¿Eliminar ${longDate(k)} del historial? Se borran sus series y la asistencia de ese día.`)) return;
-    S.sessions = S.sessions.filter(x => x.date !== k);
-    if (S.marks[k] === 'went') delete S.marks[k];
-    save(); closeSheet(); reload();
-  };
+  p.querySelector('#d').onclick = () => { closeSheet(); deleteLogDay(k, reload); };
+}
+
+function deleteLogDay(k, reload){
+  if (!confirm(`¿Eliminar ${longDate(k)} del historial? Se borran sus series y la asistencia de ese día.`)) return;
+  S.sessions = S.sessions.filter(x => x.date !== k);
+  if (S.marks[k] === 'went') delete S.marks[k];
+  save(); reload();
 }
 
 function editLogDay(k, reload){

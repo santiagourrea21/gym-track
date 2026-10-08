@@ -250,3 +250,10 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .picker-panel h2{margin:0 0 4px;font-size:18px}
 .picker-body{overflow:auto;flex:1;-webkit-overflow-scrolling:touch}
 .chip:disabled{opacity:.35}
+
+.go.done,.go:disabled{background:var(--card2);color:var(--green);opacity:1}
+.peso-line{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:6px;padding-top:8px;border-top:1px solid var(--card2);font-size:15px}
+.peso-line span{color:var(--mute)}
+.peso-line b{font-size:18px}
+.log-actions{display:flex;gap:8px;margin-top:12px}
+.log-actions .btn{padding:11px;font-size:14px}
