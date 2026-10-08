@@ -1012,7 +1012,14 @@ function openLog(){
           x.sets[id].map(st => `<span class="set-chip l${st.level || 0}">${st.kg} kg × ${st.reps}</span>`).join('')}</div></div>`);
         det.append(row);
       }
-      if (!Object.keys(x.sets).length) det.append(el(`<div class="hint" style="text-align:left">No se marcó ninguna serie.</div>`));
+      if (!Object.keys(x.sets).length){
+        const empty = el(`<div class="log-empty"><span>Sesión vacía (${esc(x.name)}): no se marcó ninguna serie.</span><button class="btn del" data-rm>Quitar esta</button></div>`);
+        empty.querySelector('[data-rm]').onclick = () => {      // quita SOLO esta sesión; las demás del día no se tocan
+          if (!confirm('¿Quitar solo esta sesión vacía? Las demás sesiones de este día se quedan.')) return;
+          S.sessions = S.sessions.filter(y => y.id !== x.id); save(); reload();
+        };
+        det.append(empty);
+      }
     });
     const acts = el(`<div class="log-actions"><button class="btn" data-e>✏️ Editar día</button><button class="btn del" data-d>🗑 Eliminar</button></div>`);
     acts.querySelector('[data-e]').onclick = () => editLogDay(k, reload);
